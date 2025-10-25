@@ -179,13 +179,11 @@ const LANDING_PAGE_HTML = `
                 return;
             }
 
-            // Add http:// if no protocol is present
             if (!/^https?:\/\//i.test(url)) {
                 url = 'https://' + url;
             }
 
-            // Redirect to the proxied version of the URL
-            window.location.href = \`/proxy/\${url}\`;
+            window.location.href = '/proxy/' + encodeURIComponent(url);
         }
 
         goButton.addEventListener('click', navigateToProxy);
@@ -213,13 +211,6 @@ async function getKVPrxList(kvPrxUrl = KV_PRX_URL) {
 }
 
 async function getPrxList(prxBankUrl = PRX_BANK_URL) {
-  /**
-   * Format:
-   *
-   * <IP>,<Port>,<Country ID>,<ORG>
-   * Contoh:
-   * 1.1.1.1,443,SG,Cloudflare Inc.
-   */
   if (!prxBankUrl) {
     throw new Error("No URL Provided!");
   }
@@ -253,7 +244,6 @@ async function reverseWeb(request, targetUrl) {
         redirect: 'follow'
     });
 
-    // Set the Host header to the target's hostname
     modifiedRequest.headers.set('Host', new URL(targetUrl).hostname);
     modifiedRequest.headers.set("X-Forwarded-Host", request.headers.get("Host"));
 
@@ -350,18 +340,14 @@ export default {
 
       const upgradeHeader = request.headers.get("Upgrade");
 
-      // Handle prx client
       if (upgradeHeader === "websocket") {
         const prxMatch = url.pathname.match(/^\/(.+[:=-]\d+)$/);
 
         if (url.pathname.length == 3 || url.pathname.match(",")) {
-          // Contoh: /ID, /SG, dll
           const prxKeys = url.pathname.replace("/", "").toUpperCase().split(",");
           const prxKey = prxKeys[Math.floor(Math.random() * prxKeys.length)];
           const kvPrx = await getKVPrxList();
-
           prxIP = kvPrx[prxKey][Math.floor(Math.random() * kvPrx[prxKey].length)];
-
           return await websocketHandler(request);
         } else if (prxMatch) {
           prxIP = prxMatch[1];
@@ -369,7 +355,6 @@ export default {
         }
       }
 
-      // New UI and Proxy routing
       if (url.pathname === '/') {
         return new Response(LANDING_PAGE_HTML, {
             headers: { 'Content-Type': 'text/html;charset=UTF-8' },
@@ -377,7 +362,7 @@ export default {
       }
 
       if (url.pathname.startsWith('/proxy/')) {
-        const targetUrl = url.pathname.substring('/proxy/'.length);
+        const targetUrl = decodeURIComponent(url.pathname.substring('/proxy/'.length));
         if (targetUrl) {
             let response = await reverseWeb(request, targetUrl);
             const contentType = response.headers.get('content-type') || '';
@@ -398,10 +383,7 @@ export default {
 
         return new Response(JSON.stringify(result), {
           status: 200,
-          headers: {
-            ...CORS_HEADER_OPTIONS,
-            "Content-Type": "application/json",
-          },
+          headers: { ...CORS_HEADER_OPTIONS, "Content-Type": "application/json" },
         });
       } else if (url.pathname.startsWith("/api/v1")) {
         const apiPath = url.pathname.replace("/api/v1", "");
@@ -417,14 +399,12 @@ export default {
           const prxBankUrl = url.searchParams.get("prx-list") || env.PRX_BANK_URL;
           const prxList = await getPrxList(prxBankUrl)
             .then((prxs) => {
-              // Filter CC
               if (filterCC.length) {
                 return prxs.filter((prx) => filterCC.includes(prx.country));
               }
               return prxs;
             })
             .then((prxs) => {
-              // shuffle result
               shuffleArray(prxs);
               return prxs;
             });
@@ -487,9 +467,7 @@ export default {
               } else {
                 return new Response(res.statusText, {
                   status: res.status,
-                  headers: {
-                    ...CORS_HEADER_OPTIONS,
-                  },
+                  headers: { ...CORS_HEADER_OPTIONS },
                 });
               }
               break;
@@ -497,9 +475,7 @@ export default {
 
           return new Response(finalResult, {
             status: 200,
-            headers: {
-              ...CORS_HEADER_OPTIONS,
-            },
+            headers: { ...CORS_HEADER_OPTIONS },
           });
         } else if (apiPath.startsWith("/myip")) {
           return new Response(
@@ -512,15 +488,12 @@ export default {
               ...request.cf,
             }),
             {
-              headers: {
-                ...CORS_HEADER_OPTIONS,
-              },
+              headers: { ...CORS_HEADER_OPTIONS },
             }
           );
         }
       }
 
-      // Fallback for any other path is to show the landing page
       return new Response(LANDING_PAGE_HTML, {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' },
       });
@@ -528,9 +501,7 @@ export default {
     } catch (err) {
       return new Response(`An error occurred: ${err.toString()}`, {
         status: 500,
-        headers: {
-          ...CORS_HEADER_OPTIONS,
-        },
+        headers: { ...CORS_HEADER_OPTIONS },
       });
     }
   },
@@ -664,12 +635,11 @@ async function protocolSniffer(buffer) {
   }
 
   const flashDelimiter = new Uint8Array(buffer.slice(1, 17));
-  // Hanya mendukung UUID v4
   if (arrayBufferToHex(flashDelimiter).match(/^[0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12}$/i)) {
     return atob(flash);
   }
 
-  return "ss"; // default
+  return "ss";
 }
 
 async function handleTCPOutBound(
@@ -1076,13 +1046,10 @@ function arrayBufferToHex(buffer) {
 function shuffleArray(array) {
   let currentIndex = array.length;
 
-  // While there remain elements to shuffle...
   while (currentIndex != 0) {
-    // Pick a remaining element...
     let randomIndex = Math.floor(Math.random() * currentIndex);
     currentIndex--;
 
-    // And swap it with the current element.
     [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
   }
 }
