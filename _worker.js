@@ -34,6 +34,171 @@ const CORS_HEADER_OPTIONS = {
   "Access-Control-Max-Age": "86400",
 };
 
+const LANDING_PAGE_HTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Futuristic Proxy Interface</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+
+        :root {
+            --primary-color: #00f0ff;
+            --background-color: #0a0a1a;
+            --text-color: #e0e0e0;
+            --dark-grey: #1a1a2a;
+        }
+
+        body {
+            font-family: 'Orbitron', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .background-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                linear-gradient(rgba(0, 240, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 240, 255, 0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: pan 60s linear infinite;
+        }
+
+        @keyframes pan {
+            0% { background-position: 0 0; }
+            100% { background-position: 1200px 1200px; }
+        }
+
+        .container {
+            background-color: rgba(10, 10, 26, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--primary-color);
+            border-radius: 10px;
+            padding: 40px;
+            width: 90%;
+            max-width: 600px;
+            text-align: center;
+            z-index: 1;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+            position: relative;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 30px;
+            text-shadow: 0 0 10px var(--primary-color);
+        }
+
+        .input-group {
+            position: relative;
+        }
+
+        #url-input {
+            width: 100%;
+            padding: 15px;
+            background-color: var(--dark-grey);
+            border: 1px solid var(--primary-color);
+            border-radius: 5px;
+            color: var(--text-color);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            box-sizing: border-box;
+            outline: none;
+            transition: box-shadow 0.3s;
+        }
+
+        #url-input:focus {
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.5);
+        }
+
+        #go-button {
+            position: absolute;
+            right: 5px;
+            top: 50%;
+            transform: translateY(-50%);
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 5px;
+            color: var(--background-color);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s, color 0.3s, text-shadow 0.3s;
+        }
+
+        #go-button:hover {
+            background-color: var(--text-color);
+            color: var(--primary-color);
+            text-shadow: 0 0 5px var(--primary-color);
+        }
+
+        footer {
+            position: absolute;
+            bottom: 10px;
+            font-size: 12px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="background-grid"></div>
+    <div class="container">
+        <h1>Proxy Gateway</h1>
+        <div class="input-group">
+            <input type="text" id="url-input" placeholder="Enter a website URL...">
+            <button id="go-button">Go</button>
+        </div>
+    </div>
+    <footer>Powered by Cloudflare Worker</footer>
+
+    <script>
+        const urlInput = document.getElementById('url-input');
+        const goButton = document.getElementById('go-button');
+
+        function navigateToProxy() {
+            let url = urlInput.value.trim();
+            if (!url) {
+                alert('Please enter a URL.');
+                return;
+            }
+
+            // Add http:// if no protocol is present
+            if (!/^https?:\/\//i.test(url)) {
+                url = 'https://' + url;
+            }
+
+            // Redirect to the proxied version of the URL
+            window.location.href = \`/proxy/\${url}\`;
+        }
+
+        goButton.addEventListener('click', navigateToProxy);
+        urlInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                navigateToProxy();
+            }
+        });
+    </script>
+</body>
+</html>
+`;
+
 async function getKVPrxList(kvPrxUrl = KV_PRX_URL) {
   if (!kvPrxUrl) {
     throw new Error("No URL Provided!");
@@ -80,27 +245,27 @@ async function getPrxList(prxBankUrl = PRX_BANK_URL) {
   return cachedPrxList;
 }
 
-async function reverseWeb(request, target, targetPath) {
-  const targetUrl = new URL(request.url);
-  const targetChunk = target.split(":");
+async function reverseWeb(request, targetUrl) {
+    const modifiedRequest = new Request(targetUrl, {
+        headers: request.headers,
+        method: request.method,
+        body: request.body,
+        redirect: 'follow'
+    });
 
-  targetUrl.hostname = targetChunk[0];
-  targetUrl.port = targetChunk[1]?.toString() || "443";
-  targetUrl.pathname = targetPath || targetUrl.pathname;
+    // Set the Host header to the target's hostname
+    modifiedRequest.headers.set('Host', new URL(targetUrl).hostname);
+    modifiedRequest.headers.set("X-Forwarded-Host", request.headers.get("Host"));
 
-  const modifiedRequest = new Request(targetUrl, request);
+    const response = await fetch(modifiedRequest);
+    const newResponse = new Response(response.body, response);
 
-  modifiedRequest.headers.set("X-Forwarded-Host", request.headers.get("Host"));
+    for (const [key, value] of Object.entries(CORS_HEADER_OPTIONS)) {
+        newResponse.headers.set(key, value);
+    }
+    newResponse.headers.set("X-Proxied-By", "Cloudflare Worker");
 
-  const response = await fetch(modifiedRequest);
-
-  const newResponse = new Response(response.body, response);
-  for (const [key, value] of Object.entries(CORS_HEADER_OPTIONS)) {
-    newResponse.headers.set(key, value);
-  }
-  newResponse.headers.set("X-Proxied-By", "Cloudflare Worker");
-
-  return newResponse;
+    return newResponse;
 }
 
 function bufferToBase64(buffer) {
@@ -201,6 +366,27 @@ export default {
         } else if (prxMatch) {
           prxIP = prxMatch[1];
           return await websocketHandler(request);
+        }
+      }
+
+      // New UI and Proxy routing
+      if (url.pathname === '/') {
+        return new Response(LANDING_PAGE_HTML, {
+            headers: { 'Content-Type': 'text/html;charset=UTF-8' },
+        });
+      }
+
+      if (url.pathname.startsWith('/proxy/')) {
+        const targetUrl = url.pathname.substring('/proxy/'.length);
+        if (targetUrl) {
+            let response = await reverseWeb(request, targetUrl);
+            const contentType = response.headers.get('content-type') || '';
+            if (env.EMBED_ASSETS === 'true' && contentType.includes('text/html')) {
+                return embedAssets(response, new URL(targetUrl));
+            }
+            return response;
+        } else {
+            return new Response('Please provide a URL to proxy.', { status: 400 });
         }
       }
 
@@ -334,16 +520,11 @@ export default {
         }
       }
 
-      const targetReversePrx = env.REVERSE_PRX_TARGET || "example.com";
-      const response = await reverseWeb(request, targetReversePrx);
+      // Fallback for any other path is to show the landing page
+      return new Response(LANDING_PAGE_HTML, {
+        headers: { 'Content-Type': 'text/html;charset=UTF-8' },
+      });
 
-      const contentType = response.headers.get('content-type') || '';
-
-      if (env.EMBED_ASSETS === 'true' && contentType.includes('text/html')) {
-        return embedAssets(response, new URL(request.url));
-      }
-
-      return response;
     } catch (err) {
       return new Response(`An error occurred: ${err.toString()}`, {
         status: 500,
